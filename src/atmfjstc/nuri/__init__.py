@@ -4,6 +4,7 @@ import os
 import json
 import shutil
 import subprocess
+import re
 
 from tempfile import TemporaryDirectory
 from typing import NoReturn, NamedTuple, Optional, Any
@@ -11,6 +12,7 @@ from pathlib import Path
 
 
 SOCKET_ENV_KEY = 'NGINX_UNIT_CONTROL_SOCKET'
+EDITOR_ENV_KEY = 'EDITOR'
 
 
 def fail(message: str) -> NoReturn:
@@ -49,6 +51,29 @@ def locate_control_socket(raw_args: argparse.Namespace) -> Path:
     fail(
         "Couldn't find Unit control socket in the usual locations, please specify it using either the --socket CLI "
         f"argument or the {SOCKET_ENV_KEY} environment variable."
+    )
+
+
+def locate_editor(raw_args: argparse.Namespace) -> str:
+    editor = None
+
+    if raw_args.editor is not None:
+        editor = raw_args.editor
+    elif EDITOR_ENV_KEY in os.environ:
+        editor = os.environ[EDITOR_ENV_KEY]
+
+    if editor is not None:
+        if shutil.which(editor) is None:
+            fail(f"Text editor '{editor}' doesn't seem to be available")
+        return editor
+
+    for editor in ('nano', 'pico', 'vim', 'vi'):
+        if shutil.which(editor) is not None:
+            return editor
+
+    fail(
+        "Couldn't find any configured text editor, please specify it using either the --editor CLI argument or the "
+        f"{EDITOR_ENV_KEY} environment variable."
     )
 
 
@@ -105,7 +130,69 @@ def print_unit_success(result: Any):
 
 
 def execute_edit_command(context: Context):
-    print("(stub for command: edit)")
+    editor = locate_editor(context.args)
+
+    config = run_json_request(context, context.args.path or '')
+
+    # Trick: we use a js extension so that comments don't break syntax highlighting
+    temp_file = context.temp_area / 'temp_edit.js'
+
+    HEADER = (
+        "// Edit the configuration below\n"
+        "// Lines starting with // will be ignored\n"
+        "// To cancel, just leave the file unchanged, or add a line like: // cancel\n"
+        "\n"
+    )
+
+    with temp_file.open('wt') as f:
+        f.write(HEADER)
+        json.dump(config, fp=f, indent=4, ensure_ascii=False)
+
+    while True:
+        result = subprocess.run([editor, str(temp_file)])
+        if result.returncode != 0:
+            fail("Editor return code non-zero, something went wrong")
+
+        real_lines = []
+        with temp_file.open('rt') as f:
+            for line in f:
+                if re.match(r'\s*($|//)', line):
+                    if re.match(r'\s*//\s*cancel', line, flags=re.I):
+                        print("Canceled")
+                        sys.exit(-1)
+                    continue
+                real_lines.append(line)
+
+        error = None
+        try:
+            new_config = json.loads(''.join(real_lines))
+        except json.JSONDecodeError as e:
+            error = e
+
+        if error is not None:
+            real_lines.insert(error.lineno - 1, f"// JSON error: {error}\n")
+            temp_file.write_text(
+                HEADER +
+                "// There's a JSON error in the config. Look below for a line pointing out the error.\n\n" +
+                ''.join(real_lines)
+            )
+            continue
+
+        result = run_json_request(context, context.args.path or '', method='PUT', data=new_config, check_error=False)
+
+        if isinstance(result, dict) and ('error' in result):
+            temp_file.write_text(
+                HEADER +
+                "// Unit reported an error with the new config:\n" +
+                "//\n" +
+                ''.join(f"// {line}\n" for line in result['error'].splitlines(keepends=False)) +
+                "\n" +
+                ''.join(real_lines)
+            )
+            continue
+
+        print_unit_success(result)
+        break
 
 
 def execute_restart_command(context: Context):
@@ -143,6 +230,7 @@ def main():
     )
 
     parser.add_argument('-s', '--socket', metavar="<path>", help="The path to Unit's control socket")
+    parser.add_argument('-e', '--editor', metavar="<command>", help="Text editor to use (nano, vi etc)")
 
     subparsers = parser.add_subparsers(title='commands')
 
