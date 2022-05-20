@@ -2,7 +2,8 @@ import argparse
 import sys
 import os
 
-from typing import NoReturn
+from tempfile import TemporaryDirectory
+from typing import NoReturn, NamedTuple
 from pathlib import Path
 
 
@@ -43,11 +44,17 @@ def locate_control_socket(raw_args: argparse.Namespace) -> Path:
     )
 
 
-def execute_edit_command(socket: Path, raw_args: argparse.Namespace):
+class Context(NamedTuple):
+    args: argparse.Namespace
+    socket: Path
+    temp_area: Path
+
+
+def execute_edit_command(context: Context):
     print("(stub for command: edit)")
 
 
-def execute_restart_command(socket: Path, raw_args: argparse.Namespace):
+def execute_restart_command(context: Context):
     print("(stub for command: restart)")
 
 
@@ -89,6 +96,11 @@ def main():
         parser.print_usage()
         sys.exit(-1)
 
+    temp_dir = Path(TemporaryDirectory(prefix='/dev/shm/nuri-').name)
     socket = locate_control_socket(raw_args)
 
-    raw_args.exec_command(socket, raw_args)
+    raw_args.exec_command(Context(
+        args=raw_args,
+        socket=socket,
+        temp_area=temp_dir,
+    ))
