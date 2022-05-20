@@ -1,0 +1,8 @@
+/python_venv
+/scratchpad
+
+.DS_Store
+
+__pycache__
+*.egg-info
+.idea
