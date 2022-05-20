@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='atmfjstc-nuri',
-    version='0.0.0',
+    version='0.1.0',
 
     author_name='Atom of Justice',
     author_email='atmfjstc@protonmail.com',
@@ -28,5 +28,5 @@ setup(
         "Topic :: Utilities",
         "Typing :: Typed",
     ],
-    python_requires='>=3.9',
+    python_requires='>=3.7',
 )
