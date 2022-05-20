@@ -96,11 +96,11 @@ def main():
         parser.print_usage()
         sys.exit(-1)
 
-    temp_dir = Path(TemporaryDirectory(prefix='/dev/shm/nuri-').name)
-    socket = locate_control_socket(raw_args)
+    with TemporaryDirectory(prefix='/dev/shm/nuri-') as temp_dir:
+        socket = locate_control_socket(raw_args)
 
-    raw_args.exec_command(Context(
-        args=raw_args,
-        socket=socket,
-        temp_area=temp_dir,
-    ))
+        raw_args.exec_command(Context(
+            args=raw_args,
+            socket=socket,
+            temp_area=Path(temp_dir),
+        ))
