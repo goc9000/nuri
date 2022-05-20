@@ -43,6 +43,33 @@ def locate_control_socket(raw_args: argparse.Namespace) -> Path:
     )
 
 
+def execute_edit_command(socket: Path, raw_args: argparse.Namespace):
+    print("(stub for command: edit)")
+
+
+def execute_restart_command(socket: Path, raw_args: argparse.Namespace):
+    print("(stub for command: restart)")
+
+
+def setup_edit_command(subparsers):
+    parser = subparsers.add_parser('edit', help="Interactively edit Unit's configuration")
+
+    parser.add_argument(
+        'path', metavar='</path/to/item>', nargs='?',
+        help="The subpath to edit within the configuration (must exist)"
+    )
+
+    parser.set_defaults(exec_command=execute_edit_command)
+
+
+def setup_restart_command(subparsers):
+    parser = subparsers.add_parser('restart', help="Restart an application")
+
+    parser.add_argument('application', help="The name of the application to restart")
+
+    parser.set_defaults(exec_command=execute_restart_command)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="nuri",
@@ -51,9 +78,17 @@ def main():
 
     parser.add_argument('-s', '--socket', metavar="<path>", help="The path to Unit's control socket")
 
+    subparsers = parser.add_subparsers(title='commands')
+
+    setup_edit_command(subparsers)
+    setup_restart_command(subparsers)
+
     raw_args = parser.parse_args()
+
+    if 'exec_command' not in raw_args:
+        parser.print_usage()
+        sys.exit(-1)
 
     socket = locate_control_socket(raw_args)
 
-    # Temp
-    print(f"Found socket at: {socket}")
+    raw_args.exec_command(socket, raw_args)
