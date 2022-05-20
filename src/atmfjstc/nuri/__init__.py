@@ -99,12 +99,20 @@ def run_json_request(
     return result
 
 
+def print_unit_success(result: Any):
+    if isinstance(result, dict) and ('success' in result):
+        print(result['success'])
+
+
 def execute_edit_command(context: Context):
     print("(stub for command: edit)")
 
 
 def execute_restart_command(context: Context):
-    print("(stub for command: restart)")
+    # You'd think a POST would be more appropriate for this, but the documentation says GET so...
+    result = run_json_request(context, f'control/applications/{context.args.application}/restart')
+
+    print_unit_success(result)
 
 
 def setup_edit_command(subparsers):
