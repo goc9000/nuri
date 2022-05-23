@@ -55,3 +55,5 @@ instead of slinging JSON around in the command line. Some help is provided so th
 accidentally break the JSON syntax or Unit rejects the changes.
 
 You can also use `nuri edit <path>` to focus on just one section of the configuration.
+
+Only the objects under the `config/` API can be edited using this command. Managing certificates is not implemented yet.

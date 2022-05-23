@@ -130,9 +130,11 @@ def print_unit_success(result: Any):
 
 
 def execute_edit_command(context: Context):
+    api_path = 'config/' + (context.args.path or '').lstrip('/')
+
     editor = locate_editor(context.args)
 
-    config = run_json_request(context, context.args.path or '')
+    config = run_json_request(context, api_path)
 
     # Trick: we use a js extension so that comments don't break syntax highlighting
     temp_file = context.temp_area / 'temp_edit.js'
@@ -178,7 +180,7 @@ def execute_edit_command(context: Context):
             )
             continue
 
-        result = run_json_request(context, context.args.path or '', method='PUT', data=new_config, check_error=False)
+        result = run_json_request(context, api_path, method='PUT', data=new_config, check_error=False)
 
         if isinstance(result, dict) and ('error' in result):
             temp_file.write_text(
