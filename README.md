@@ -23,6 +23,7 @@ This isn't great.
 The Unit devs claim a CLI frontend is in the making, but until that is done, I've jury-rigged this utility so as to
 facilitate some of the most basic operations for working with NGINX Unit:
 
+- viewing the current configuration;
 - editing parts of the configuration in a reasonably robust manner; and
 - restarting applications
 
@@ -46,6 +47,16 @@ To restart an application:
 
     nuri restart <application>
 
+To view the configuration (all of it):
+
+    nuri show
+
+To view a specific part of the configuration, you can use `nuri show <path>`, e.g. `nuri show routes`.
+
+Note that only objects under the `config/` API can be accessed thus. To view the data under `/certificates`, use:
+
+    nuri show-certs
+
 To edit the configuration interactively (all of it):
 
     nuri edit
@@ -54,6 +65,6 @@ This will load the configuration and spawn a standard CLI text editor (like `nan
 instead of slinging JSON around in the command line. Some help is provided so that you can correct your work if you
 accidentally break the JSON syntax or Unit rejects the changes.
 
-You can also use `nuri edit <path>` to focus on just one section of the configuration.
+Similarly, you can also use `nuri edit <path>` to focus on just one section of the configuration.
 
 Only the objects under the `config/` API can be edited using this command. Managing certificates is not implemented yet.

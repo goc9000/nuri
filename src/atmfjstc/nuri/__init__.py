@@ -129,6 +129,22 @@ def print_unit_success(result: Any):
         print(result['success'])
 
 
+def execute_show_command(context: Context):
+    api_path = 'config/' + (context.args.path or '').lstrip('/')
+    config = run_json_request(context, api_path)
+
+    json.dump(config, fp=sys.stdout, indent=4, ensure_ascii=False)
+    print()
+
+
+def execute_show_certs_command(context: Context):
+    api_path = 'certificates/' + (context.args.path or '').lstrip('/')
+    config = run_json_request(context, api_path)
+
+    json.dump(config, fp=sys.stdout, indent=4, ensure_ascii=False)
+    print()
+
+
 def execute_edit_command(context: Context):
     api_path = 'config/' + (context.args.path or '').lstrip('/')
 
@@ -204,6 +220,28 @@ def execute_restart_command(context: Context):
     print_unit_success(result)
 
 
+def setup_show_command(subparsers):
+    parser = subparsers.add_parser('show', help="Show (part of) Unit's configuration")
+
+    parser.add_argument(
+        'path', metavar='</path/to/item>', nargs='?',
+        help="The subpath to show within the configuration (must exist)"
+    )
+
+    parser.set_defaults(exec_command=execute_show_command)
+
+
+def setup_show_certs_command(subparsers):
+    parser = subparsers.add_parser('show-certs', help="Show (part of) Unit's certificates configuration")
+
+    parser.add_argument(
+        'path', metavar='</path/to/item>', nargs='?',
+        help="The subpath to show within the certificates configuration (must exist)"
+    )
+
+    parser.set_defaults(exec_command=execute_show_certs_command)
+
+
 def setup_edit_command(subparsers):
     parser = subparsers.add_parser('edit', help="Interactively edit Unit's configuration")
 
@@ -236,6 +274,8 @@ def main():
 
     subparsers = parser.add_subparsers(title='commands')
 
+    setup_show_command(subparsers)
+    setup_show_certs_command(subparsers)
     setup_edit_command(subparsers)
     setup_restart_command(subparsers)
 
