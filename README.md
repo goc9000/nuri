@@ -43,9 +43,7 @@ The package, by design, pulls in no dependencies.
 
 ## Usage
 
-To restart an application:
-
-    nuri restart <application>
+### Configuration Control
 
 To view the configuration (all of it):
 
@@ -68,3 +66,23 @@ accidentally break the JSON syntax or Unit rejects the changes.
 Similarly, you can also use `nuri edit <path>` to focus on just one section of the configuration.
 
 Only the objects under the `config/` API can be edited using this command. Managing certificates is not implemented yet.
+
+### Application Control
+
+To restart an application:
+
+    nuri restart <application>
+
+To temporarily disable an application:
+
+    nuri disable <application>
+
+This will cause it to shut down and release all locks so one can, e.g. safely upgrade the application binaries and
+other resources. When done upgrading, the app can be re-enabled using:
+
+    nuri reenable <application>
+
+Note that Nginx Unit does not yet support disabling apps natively, so we accomplish it via some trickery behind the
+scenes. Specifically, the app config is temporarily deleted and backed up in a specially formatted route step. An
+unfortunate side effect of this is that the app config will not be accessible for viewing or editing while the app
+is disabled.

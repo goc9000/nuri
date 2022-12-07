@@ -7,8 +7,9 @@ import subprocess
 import re
 
 from tempfile import TemporaryDirectory
-from typing import NoReturn, NamedTuple, Optional, Any
+from typing import NoReturn, NamedTuple, Optional, Any, Callable
 from pathlib import Path
+from base64 import urlsafe_b64encode, urlsafe_b64decode
 
 
 SOCKET_ENV_KEY = 'NGINX_UNIT_CONTROL_SOCKET'
@@ -220,6 +221,176 @@ def execute_restart_command(context: Context):
     print_unit_success(result)
 
 
+FAKE_URL_PREFIX = "https://localhost:59999/nuri-data/"
+
+
+def create_data_step(data: dict) -> dict:
+    """
+    An artificial, impossible-to-match route step that stores data.
+    """
+    return {
+        'match': {
+            'arguments': {
+                'impossible': urlsafe_b64encode(os.urandom(64)).decode('ascii'),
+            },
+        },
+        'action': {
+            'return': 302,
+            'location': FAKE_URL_PREFIX + urlsafe_b64encode(json.dumps(data, ensure_ascii=True).encode('ascii')).decode('ascii'),
+        },
+    }
+
+
+def locate_data_step(config: dict):
+    if 'routes' not in config:
+        return None, None
+
+    routes = [config['routes']] if isinstance(config['routes'], list) else config['routes'].values()
+
+    for route in routes:
+        for index, step in enumerate(route):
+            if ('action' in step) and step['action'].get('location', '').startswith(FAKE_URL_PREFIX):
+                return route, index
+
+    return None, None
+
+
+def retrieve_data_step(config: dict) -> dict:
+    route, index = locate_data_step(config)
+
+    if route is None:
+        return dict()
+
+    raw_data = route[index]['action']['location'][len(FAKE_URL_PREFIX):].encode('ascii')
+
+    return json.loads(urlsafe_b64decode(raw_data))
+
+
+def is_data_empty(data: dict) -> bool:
+    for value in data.values():
+        if isinstance(value, (list, dict)) and (len(value) == 0):
+            continue
+        return False
+
+    return True
+
+
+def store_data_step(mut_config: dict, data: dict):
+    step = create_data_step(data)
+
+    mut_route, index = locate_data_step(mut_config)
+
+    if mut_route is not None:
+        if is_data_empty(data):
+            mut_route.pop(index)
+        else:
+            mut_route[index] = step
+        return
+
+    if 'routes' not in mut_config:
+        mut_config['routes'] = []
+
+    storage = mut_config['routes']
+
+    if isinstance(storage, dict):
+        if len(storage) == 0:
+            storage['main'] = []
+        for route in storage.values():
+            storage = route
+            break
+
+    storage.insert(0, step)
+
+
+def json_search_replace(data: Any, callback: Callable[[Any, tuple], None], head_first: bool = True) -> Any:
+    def _json_search_replace_rec(data, path):
+        if head_first and isinstance(data, (list, dict)):
+            data = callback(data, path)
+
+        if isinstance(data, list):
+            data = [_json_search_replace_rec(item, path + (index,)) for index, item in enumerate(data)]
+        elif isinstance(data, dict):
+            data = {k: _json_search_replace_rec(v, path + (k,)) for k, v in data.items()}
+        else:
+            data = callback(data, path)
+
+        if not head_first and isinstance(data, (list, dict)):
+            data = callback(data, path)
+
+        return data
+
+    return _json_search_replace_rec(data, ())
+
+
+FAKE_PROXY_PREFIX = "http://unix:/fake-socket/"
+
+
+def execute_disable_app_command(context: Context):
+    app_name = context.args.application
+
+    config = run_json_request(context, 'config/')
+
+    app_config = config['applications'].pop(app_name, None)
+    if app_config is None:
+        fail(f"Found no active application named '{app_name}'")
+
+    data = retrieve_data_step(config)
+
+    if 'disabled-applications' not in data:
+        data['disabled-applications'] = dict()
+
+    data['disabled-applications'][app_name] = app_config
+
+    store_data_step(config, data)
+
+    def _replace(value, _path):
+        if isinstance(value, dict) and (value.get('pass') == f"applications/{app_name}"):
+            return dict(
+                (k, v) if k != 'pass' else ('proxy', f"{FAKE_PROXY_PREFIX}disabled-app-ref/{app_name}")
+                for k, v in value.items()
+            )
+
+        return value
+
+    config = json_search_replace(config, _replace)
+
+    result = run_json_request(context, 'config/', method='PUT', data=config)
+    print_unit_success(result)
+
+
+def execute_reenable_app_command(context: Context):
+    app_name = context.args.application
+
+    config = run_json_request(context, 'config/')
+
+    if app_name in config['applications']:
+        fail(f"App '{app_name}' seems to be already enabled")
+
+    data = retrieve_data_step(config)
+
+    app_config = data.get('disabled-applications', dict()).pop(app_name, None)
+    if app_config is None:
+        fail(f"Found no disabled app named '{app_name}'")
+
+    store_data_step(config, data)
+
+    def _replace(value, _path):
+        if isinstance(value, dict) and value.get('proxy', '').startswith(f"{FAKE_PROXY_PREFIX}disabled-app-ref/{app_name}"):
+            return dict(
+                (k, v) if k != 'proxy' else ('pass', f"applications/{app_name}")
+                for k, v in value.items()
+            )
+
+        return value
+
+    config = json_search_replace(config, _replace)
+
+    config['applications'][app_name] = app_config
+
+    result = run_json_request(context, 'config/', method='PUT', data=config)
+    print_unit_success(result)
+
+
 def setup_show_command(subparsers):
     parser = subparsers.add_parser('show', help="Show (part of) Unit's configuration")
 
@@ -261,6 +432,22 @@ def setup_restart_command(subparsers):
     parser.set_defaults(exec_command=execute_restart_command)
 
 
+def setup_disable_app_command(subparsers):
+    parser = subparsers.add_parser('disable', help="Disable an application")
+
+    parser.add_argument('application', help="The name of the application to disable")
+
+    parser.set_defaults(exec_command=execute_disable_app_command)
+
+
+def setup_reenable_app_command(subparsers):
+    parser = subparsers.add_parser('reenable', help="Re-enable an application")
+
+    parser.add_argument('application', help="The name of the application to re-enable")
+
+    parser.set_defaults(exec_command=execute_reenable_app_command)
+
+
 def main():
     sanity_checks()
 
@@ -278,6 +465,8 @@ def main():
     setup_show_certs_command(subparsers)
     setup_edit_command(subparsers)
     setup_restart_command(subparsers)
+    setup_disable_app_command(subparsers)
+    setup_reenable_app_command(subparsers)
 
     raw_args = parser.parse_args()
 
